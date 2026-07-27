@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-claim-ledger"
-version = "1.0.0"
+version = "1.0.1"
 description = "Turn supplied AI claims into a local source and verification checklist."
 readme = "README.md"
 requires-python = ">=3.10"
