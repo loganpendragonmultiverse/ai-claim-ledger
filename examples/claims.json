@@ -1,7 +1,7 @@
 {
   "version": 1,
   "claims": [
-    {"id": "claim-1", "claim": "The format was introduced in 2020.", "status": "verified", "sources": [{"url": "https://example.com/spec", "title": "Primary specification"}]},
+    {"id": "claim-1", "claim": "Python includes a standard JSON encoder and decoder.", "status": "verified", "sources": [{"url": "https://docs.python.org/3/library/json.html", "title": "Python JSON documentation"}]},
     {"id": "claim-2", "claim": "Every supported system includes the dependency.", "status": "needs-source", "notes": "Check clean installations on each platform."}
   ]
 }

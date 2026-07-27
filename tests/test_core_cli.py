@@ -12,9 +12,14 @@ def ledger():
         "claims": [
             {
                 "id": "c1",
-                "claim": "The format was introduced in 2020.",
+                "claim": "Python includes a standard JSON encoder and decoder.",
                 "status": "verified",
-                "sources": [{"url": "https://example.com/spec", "title": "Specification"}],
+                "sources": [
+                    {
+                        "url": "https://docs.python.org/3/library/json.html",
+                        "title": "Python JSON documentation",
+                    }
+                ],
             },
             {
                 "id": "c2",
@@ -29,7 +34,10 @@ def ledger():
 def test_report_filter_and_markdown():
     result = report(ledger(), {"verified"})
     assert result["total"] == 1
-    assert "[Specification](https://example.com/spec)" in render_markdown(result)
+    assert (
+        "[Python JSON documentation](https://docs.python.org/3/library/json.html)"
+        in render_markdown(result)
+    )
     with pytest.raises(ValueError, match="unknown"):
         report(ledger(), {"maybe"})
 
