@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter
+from datetime import date
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -95,6 +97,7 @@ def _validate_source(source: Any, label: str, *, require_id: bool) -> str:
         raise ValueError(f"{label} has an invalid source URL")
     if "title" in source and not isinstance(source["title"], str):
         raise TypeError(f"{label} has an invalid source title")
+    _validate_review_dates(source, label)
     if not require_id:
         return ""
     source_id = source.get("id")
@@ -103,7 +106,81 @@ def _validate_source(source: Any, label: str, *, require_id: bool) -> str:
     return source_id
 
 
-def report(data: dict[str, Any], statuses: set[str] | None = None) -> dict[str, Any]:
+def _review_date(value: Any, label: str) -> date:
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value):
+        raise ValueError(f"{label} must be a YYYY-MM-DD date")
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError(f"{label} must be a valid calendar date") from exc
+
+
+def _validate_review_dates(source: dict[str, Any], label: str) -> None:
+    reviewed = (
+        _review_date(source["reviewed_on"], f"{label} reviewed_on")
+        if "reviewed_on" in source
+        else None
+    )
+    due = (
+        _review_date(source["review_due"], f"{label} review_due")
+        if "review_due" in source
+        else None
+    )
+    if reviewed and due and due < reviewed:
+        raise ValueError(f"{label} review_due precedes reviewed_on")
+
+
+def source_review(data: dict[str, Any], claims: list[dict[str, Any]], as_of: str) -> dict[str, Any]:
+    boundary = _review_date(as_of, "as-of")
+    sources = (
+        data.get("sources", [])
+        if data["version"] == 2
+        else [source for claim in data["claims"] for source in claim.get("sources", [])]
+    )
+    for source in sources:
+        _validate_review_dates(source, "source")
+    lookup = {source["id"]: source for source in sources} if data["version"] == 2 else {}
+    rows = []
+    for claim in claims:
+        supporting = (
+            [
+                (link["source_id"], lookup[link["source_id"]])
+                for link in claim.get("evidence", [])
+                if link["relation"] == "supports"
+            ]
+            if data["version"] == 2
+            else [(str(index), source) for index, source in enumerate(claim.get("sources", []))]
+        )
+        overdue, undated, future = [], [], []
+        for reference, source in supporting:
+            if (
+                "reviewed_on" in source
+                and _review_date(source["reviewed_on"], "reviewed_on") > boundary
+            ):
+                future.append(reference)
+            if "review_due" not in source:
+                undated.append(reference)
+            elif _review_date(source["review_due"], "review_due") <= boundary:
+                overdue.append(reference)
+        rows.append(
+            {
+                "claim_id": claim["id"],
+                "overdue_supporting_sources": sorted(overdue),
+                "undated_supporting_sources": sorted(undated),
+                "reviewed_after_as_of": sorted(future),
+            }
+        )
+    return {
+        "as_of": as_of,
+        "due_boundary": "review_due <= as_of",
+        "claims": rows,
+        "overdue_claim_ids": [row["claim_id"] for row in rows if row["overdue_supporting_sources"]],
+    }
+
+
+def report(
+    data: dict[str, Any], statuses: set[str] | None = None, *, as_of: str | None = None
+) -> dict[str, Any]:
     if statuses and not statuses <= STATUSES:
         raise ValueError("unknown status filter")
     claims = [claim for claim in data["claims"] if not statuses or claim["status"] in statuses]
@@ -118,6 +195,8 @@ def report(data: dict[str, Any], statuses: set[str] | None = None) -> dict[str, 
     if data["version"] == 2:
         result["sources"] = sorted(data["sources"], key=lambda item: item["id"])
         result["coverage"] = _evidence_coverage(data)
+    if as_of is not None:
+        result["source_review"] = source_review(data, claims, as_of)
     return result
 
 
@@ -177,5 +256,20 @@ def render_markdown(result: dict[str, Any]) -> str:
                 lines.append(f"- {label}: {', '.join(coverage[key])}")
         if not gaps:
             lines.append("No evidence coverage gaps detected.")
+        lines.append("")
+    if "source_review" in result:
+        review = result["source_review"]
+        lines.extend(
+            [
+                "## Source Review",
+                "",
+                f"As of {review['as_of']}; due dates on or before this date need review. Claim statuses are unchanged.",
+                "",
+            ]
+        )
+        for row in review["claims"]:
+            lines.append(
+                f"- {row['claim_id']}: overdue supporting sources: {', '.join(row['overdue_supporting_sources']) or 'none'}; no review due date: {', '.join(row['undated_supporting_sources']) or 'none'}; reviewed after as-of: {', '.join(row['reviewed_after_as_of']) or 'none'}"
+            )
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
