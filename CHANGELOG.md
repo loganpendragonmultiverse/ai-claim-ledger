@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.0 - 2026-10-15
+
+- Add optional source review dates with an explicit --as-of review boundary.
+- Identify claims relying on overdue supporting sources, including shared source links; retain supplied truth statuses and evidence relations.
+- List undated support and reviews recorded after the boundary without fetching URLs or inferring truth.
+
 ## 1.1.0 - 2026-08-06
 
 - Added a version 2 ledger format with reusable source records and explicit `supports`,

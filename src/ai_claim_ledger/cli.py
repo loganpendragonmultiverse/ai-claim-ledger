@@ -16,9 +16,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--status", action="append", choices=sorted(STATUSES))
     parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--as-of", metavar="YYYY-MM-DD", help="check source review dates against this explicit date"
+    )
     args = parser.parse_args(argv)
     try:
-        result = report(load_ledger(args.input), set(args.status or []))
+        result = report(load_ledger(args.input), set(args.status or []), as_of=args.as_of)
         rendered = (
             json.dumps(result, indent=2, ensure_ascii=False) + "\n"
             if args.format == "json"

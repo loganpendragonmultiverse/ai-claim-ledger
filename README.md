@@ -40,3 +40,21 @@ This tool does not call an AI model, extract claims automatically, browse URLs, 
 Requires Python 3.10 or newer. Development checks use Ruff, pytest with branch coverage, and package builds.
 
 Part of the [Logan Pendragon Forge open-source collection](https://www.loganpendragonforge.com/open-source/). Licensed under the [MIT License](LICENSE).
+
+## Offline source review dates
+
+Add optional `reviewed_on` and `review_due` dates to sources (strict `YYYY-MM-DD`,
+with due on or after reviewed). Run `claim-ledger examples/claims.json --as-of 2026-10-15`.
+There is no implicit current date. A due date on or before the explicit as-of boundary
+is overdue. The source-review section flags claims linked to overdue **supporting**
+sources; contradictory and contextual evidence does not create that flag. Shared
+version 2 sources propagate to each linked claim. Undated supporting sources and
+reviews recorded after the boundary are listed separately. Source-review rows follow
+the status filter; coverage retains its existing whole-ledger meaning.
+
+Version 1 inline sources are treated as supporting and referenced by zero-based index
+within each claim; version 2 uses registry source IDs. Omitting `--as-of` preserves
+the ordinary report structure. Review dates are validated even without an as-of check.
+This is an administrative review checklist: an overdue source neither disproves nor
+invalidates a claim. Statuses and evidence relations remain exactly as supplied, and
+no URL is fetched. The report is not a reconstruction of a past ledger state.
