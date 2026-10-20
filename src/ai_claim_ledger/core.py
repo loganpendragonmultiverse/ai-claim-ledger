@@ -1,20 +1,44 @@
 from __future__ import annotations
 
+import html
 import json
 import re
 from collections import Counter
 from datetime import date
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 STATUSES = {"unverified", "needs-source", "verified", "disputed"}
 RELATIONS = {"supports", "contradicts", "context"}
 
 
+def _object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON key: {key}")
+        result[key] = value
+    return result
+
+
+def _text(value: str) -> str:
+    """Keep supplied text literal in a single Markdown line."""
+    value = html.escape(" ".join(value.splitlines()), quote=False)
+    return re.sub(r"([\\`*_{}\[\]()#+.!|~>-])", r"\\\1", value)
+
+
+def _url(value: str) -> str:
+    return quote(value, safe=":/?#@!$&'*+,;=%[]")
+
+
 def load_ledger(path: Path) -> dict[str, Any]:
-    data = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict) or data.get("version") not in {1, 2}:
+    data = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_object)
+    if (
+        not isinstance(data, dict)
+        or type(data.get("version")) is not int
+        or data["version"] not in {1, 2}
+    ):
         raise ValueError("ledger must be a version 1 or version 2 object")
     claims = data.get("claims")
     if not isinstance(claims, list):
@@ -30,6 +54,8 @@ def _validate_version_1(claims: list[Any]) -> None:
     seen: set[str] = set()
     for index, claim in enumerate(claims, 1):
         claim_id, status = _validate_claim(claim, index, seen)
+        if "evidence" in claim:
+            raise ValueError(f"version 1 claim {claim_id} must use inline sources")
         sources = claim.get("sources", [])
         if not isinstance(sources, list):
             raise TypeError(f"claim {claim_id} sources must be a list")
@@ -67,7 +93,7 @@ def _validate_version_2(data: dict[str, Any], claims: list[Any]) -> None:
             source_id, relation = link.get("source_id"), link.get("relation")
             if not isinstance(source_id, str) or source_id not in source_ids:
                 raise ValueError(f"claim {claim_id} references an unknown source")
-            if relation not in RELATIONS:
+            if not isinstance(relation, str) or relation not in RELATIONS:
                 raise ValueError(f"claim {claim_id} has an unsupported evidence relation")
             if source_id in linked_sources:
                 raise ValueError(f"claim {claim_id} links source {source_id} more than once")
@@ -84,8 +110,15 @@ def _validate_claim(claim: Any, index: int, seen: set[str]) -> tuple[str, str]:
     claim_id, text, status = claim.get("id"), claim.get("claim"), claim.get("status")
     if not isinstance(claim_id, str) or not claim_id.strip() or claim_id in seen:
         raise ValueError(f"claim {index} has a missing or duplicate id")
-    if not isinstance(text, str) or not text.strip() or status not in STATUSES:
+    if (
+        not isinstance(text, str)
+        or not text.strip()
+        or not isinstance(status, str)
+        or status not in STATUSES
+    ):
         raise ValueError(f"claim {claim_id} requires text and a supported status")
+    if "notes" in claim and not isinstance(claim["notes"], str):
+        raise TypeError(f"claim {claim_id} notes must be a string")
     return claim_id, status
 
 
@@ -93,8 +126,16 @@ def _validate_source(source: Any, label: str, *, require_id: bool) -> str:
     if not isinstance(source, dict) or not isinstance(source.get("url"), str):
         raise TypeError(f"{label} has an invalid source")
     parsed = urlparse(source["url"])
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or any(char.isspace() or ord(char) < 32 for char in source["url"])
+    ):
         raise ValueError(f"{label} has an invalid source URL")
+    try:
+        _ = parsed.port
+    except ValueError as exc:
+        raise ValueError(f"{label} has an invalid source URL port") from exc
     if "title" in source and not isinstance(source["title"], str):
         raise TypeError(f"{label} has an invalid source title")
     _validate_review_dates(source, label)
@@ -229,17 +270,17 @@ def render_markdown(result: dict[str, Any]) -> str:
             continue
         lines.extend([f"## {status.replace('-', ' ').title()} ({len(claims)})", ""])
         for claim in claims:
-            lines.append(f"- [ ] **{claim['id']}** — {claim['claim']}")
+            lines.append(f"- [ ] **{_text(claim['id'])}** — {_text(claim['claim'])}")
             for source in claim.get("sources", []):
                 label = source.get("title") or source["url"]
-                lines.append(f"  - Source: [{label}]({source['url']})")
+                lines.append(f"  - Source: [{_text(label)}]({_url(source['url'])})")
             for link in claim.get("evidence", []):
                 source = source_lookup[link["source_id"]]
                 label = source.get("title") or source["url"]
                 relation = link["relation"].replace("-", " ").title()
-                lines.append(f"  - {relation}: [{label}]({source['url']})")
+                lines.append(f"  - {relation}: [{_text(label)}]({_url(source['url'])})")
             if claim.get("notes"):
-                lines.append(f"  - Notes: {claim['notes']}")
+                lines.append(f"  - Notes: {_text(claim['notes'])}")
         lines.append("")
     if "coverage" in result:
         lines.extend(["## Evidence Coverage", ""])
@@ -253,7 +294,7 @@ def render_markdown(result: dict[str, Any]) -> str:
         for key, label in labels.items():
             if coverage[key]:
                 gaps = True
-                lines.append(f"- {label}: {', '.join(coverage[key])}")
+                lines.append(f"- {label}: {', '.join(_text(value) for value in coverage[key])}")
         if not gaps:
             lines.append("No evidence coverage gaps detected.")
         lines.append("")
@@ -269,7 +310,7 @@ def render_markdown(result: dict[str, Any]) -> str:
         )
         for row in review["claims"]:
             lines.append(
-                f"- {row['claim_id']}: overdue supporting sources: {', '.join(row['overdue_supporting_sources']) or 'none'}; no review due date: {', '.join(row['undated_supporting_sources']) or 'none'}; reviewed after as-of: {', '.join(row['reviewed_after_as_of']) or 'none'}"
+                f"- {_text(row['claim_id'])}: overdue supporting sources: {', '.join(_text(value) for value in row['overdue_supporting_sources']) or 'none'}; no review due date: {', '.join(_text(value) for value in row['undated_supporting_sources']) or 'none'}; reviewed after as-of: {', '.join(_text(value) for value in row['reviewed_after_as_of']) or 'none'}"
             )
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.1 - 2026-10-20
+
+- Reject ambiguous JSON and malformed field types; render supplied report text literally and create output files exclusively.
+- Ship the usage example and development/testing instructions in installed distributions.
+
 ## 1.2.0 - 2026-10-15
 
 - Add optional source review dates with an explicit --as-of review boundary.
