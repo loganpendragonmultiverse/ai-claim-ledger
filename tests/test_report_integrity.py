@@ -89,3 +89,22 @@ def test_markdown_is_literal_and_json_is_unchanged(tmp_path):
     assert "https://docs.python.org/a_%28b%29" in markdown
     assert result["claims"][-1]["claim"] == data["claims"][0]["claim"]
     assert result["claims"][-1]["notes"] == data["claims"][0]["notes"]
+
+
+def test_symlink_guard_precedes_file_creation(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    path = write(tmp_path, ledger())
+    output = tmp_path / "would-follow-link"
+    original = Path.is_symlink
+    monkeypatch.setattr(Path, "is_symlink", lambda self: self == output or original(self))
+    assert main([str(path), "--output", str(output)]) == 2
+    assert not output.exists()
+
+
+def test_version_one_does_not_accept_registry_evidence(tmp_path):
+    from test_core_cli import version_1_ledger
+
+    data = version_1_ledger()
+    data["claims"][0]["evidence"] = [{"source_id": "missing", "relation": "supports"}]
+    assert main([str(write(tmp_path, data))]) == 2

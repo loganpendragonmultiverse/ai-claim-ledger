@@ -65,7 +65,9 @@ Schema versions must be JSON integers, and duplicate object keys are rejected ra
 than silently replacing earlier values. Optional report details must have their
 documented string/list types. Markdown displays supplied text literally, with line
 breaks flattened; JSON retains validated source values. Output creation is exclusive:
-existing files and symlinks are never overwritten. Reports remain offline and do not
+existing files are refused and existing symbolic links are checked before creation.
+This is accidental-overwrite protection, not a defense against concurrent hostile
+filesystem changes. Reports remain offline and do not
 modify their source ledger.
 
 Python 3.10+ on Windows, macOS and Linux is covered by the required CI matrix.

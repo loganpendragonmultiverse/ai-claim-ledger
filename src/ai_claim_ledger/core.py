@@ -54,6 +54,8 @@ def _validate_version_1(claims: list[Any]) -> None:
     seen: set[str] = set()
     for index, claim in enumerate(claims, 1):
         claim_id, status = _validate_claim(claim, index, seen)
+        if "evidence" in claim:
+            raise ValueError(f"version 1 claim {claim_id} must use inline sources")
         sources = claim.get("sources", [])
         if not isinstance(sources, list):
             raise TypeError(f"claim {claim_id} sources must be a list")
